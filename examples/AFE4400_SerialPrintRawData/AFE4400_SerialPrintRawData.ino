@@ -1,72 +1,104 @@
-/*
 
-Example Code for use with AFE4400 library
- Arduino Library for Texas Instruments AFE4400 - Pulse-Oximetry Analog Front End
- go to http://www.ti.com/product/afe4400 for datasheet
- See http://mogar.github.com/AFE4400 for more info
- 
-Pin Connections:
-Arduino    <----->  AFE4400
-SS   (10)
-MOSI (11)
-MISO (12)
-CLK  (13)
-GND
-5V 
- 
-The MIT License (MIT)
-
-Copyright (c) 2014 Morgan Redfield
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
- 
- */ 
  
 #include <SPI.h>
 #include "AFE4400.h"
 
-AFE4400 pulseOx;
+AFE4400 afe;//AFE_PWN,ADC_RDY,AFE_RST  //3,4,5
+int32_t dataout[6] = {0};
+#define ave 10
+int value;
+
+unsigned long data[6]={0};
+int count = 0;
 
 void setup() {
 	Serial.begin(115200);
-	
-	// enable debug print statements
-	pulseOx.enableDebugSerial();
-	
-	// begin communication with the AFE4400
-	pulseOx.begin(10);
-	
-	// setup AFE4400 for default measurements
-	pulseOx.setLEDCurrent(128, 128); // half current for each LED by default
-	pulseOx.setDefaultTiming();
-	
+	afe.begin(10,3,4);   //SS,AFE_PWN,AFE_RST
+        
+        Serial.println(afe.diag(),BIN);  
+        afe.setDefaultTiming();
+        afe.setLEDCurrent(75, 75); 
+        afe.setGain(0,0,0,0,0x02);
 	// begin measuring
-	// note that after this, all pulse oximetry measurements will
-	// automatically be printed to the Serial interface
-	pulseOx.beginMeasure();
-	
+
+	afe.beginMeasure(false);
+        Serial.println("==========REG_SRT========");
+	dumpreg();
+        Serial.println("==========REG_END========");
+        attachInterrupt(0,readadc,RISING);
 }
 
 
 void loop() {
-	// do nothing
-	// the pulseOx class will automatically handle reading the AFE4400
-	// at the correct times. After each read, the data will be printed
-	// to the serial interface (because we have debut turned on)
+
+   if(count>=ave){
+     detachInterrupt(0);
+     for(int i=0;i<=4;i++){
+     Serial.print(dataout[i]/(float)count,8);
+     Serial.print(",");
+      }
+     Serial.println(dataout[5]/(float)count,8);
+     count = 0;
+     for(int i=0;i<=5;i++){
+      dataout[i] =0;
+    }
+     attachInterrupt(0,readadc,RISING);
+   }
+}
+void readadc(){
+
+  afe.SPIEnableRead();
+  for(int j=0;j<=5; j++){
+   data[j] =  readmuti(0x2a+j);
+  }
+  afe.SPIDisableRead();
+
+  for(int i=0;i<=5;i++){
+    long temp = data[i]<<10;
+    dataout[i] += temp/1024;
+}
+
+  count+=1;
+}
+void dumpreg(){
+  
+    for(int i=0x01;i<=0x1E; i++){
+  uint32_t data = afe.SPIReadReg(i);
+  Serial.print(i,HEX);
+  Serial.print("==>");
+  Serial.println(data,BIN);
+  }
+      for(int i=0x20;i<=0x23; i++){
+  uint32_t data = afe.SPIReadReg(i);
+  Serial.print(i,HEX);
+  Serial.print("==>");
+  Serial.println(data,BIN);
+  }
+  
+}
+
+uint32_t readmuti(byte regAddress){
+   byte temp_byte = 0;
+  uint32_t reg_value = 0;
+  
+  digitalWrite( afe.chipSelectPin, LOW);
+  
+  // set address
+  SPI.transfer(regAddress);
+  // get first byte
+  temp_byte = SPI.transfer(0x00);
+  reg_value |= temp_byte << 16;
+
+  // get second byte
+  temp_byte = SPI.transfer(0x00);
+  reg_value |= temp_byte << 8;
+
+  // get last byte
+  temp_byte = SPI.transfer(0x00);
+  reg_value |= temp_byte;
+
+   reg_value = (reg_value<<8)>>8;
+  digitalWrite( afe.chipSelectPin, HIGH);
+  return reg_value;
+  
 }

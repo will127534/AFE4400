@@ -113,10 +113,10 @@ public:
 	void enableDebugSerial(); 
 	void disableDebugSerial();
 	void sw_reset();
-	void setLEDCurrent(uint32_t led1_current, uint32_t led2_current);
-	void begin(int ss); 		
+	void setLEDCurrent(uint8_t led1_current, uint8_t led2_current);
+	void begin(int ss,int nAFE_pwdn,int nAFE_rst); 		
 	void setDefaultTiming();
-	void beginMeasure();
+	void beginMeasure(bool Push_Pull);
 	int readPulseData();
 	int readOxData();
 	
@@ -131,11 +131,13 @@ public:
 	void SPIWriteReg(byte regAddress, uint32_t regValue);
 	
 	void writeTimingData(byte regAddress, uint16_t timing_value);
+    void setGain(int ambdac,bool stage2,byte stage2_gain,byte Cf,byte Rf) ;
+    uint32_t diag();
 
-	
-private:
 	void SPIEnableRead();
 	void SPIDisableRead();
+private:
+
 };
 
 #endif

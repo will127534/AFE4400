@@ -34,11 +34,7 @@ SOFTWARE.
 #include <SPI.h>
 
 AFE4400::AFE4400() {
-  debugSerial = 0;
-  
-  nAFE_pwdn = 3;
-  AFE_ADC_rdy = 2;
-  nAFE_rst = 4;
+
 }
 
 void AFE4400::sw_reset() {
@@ -56,12 +52,11 @@ void AFE4400::sw_reset() {
 //  begin()
 //  Initial SPI setup, soft reset of device
 //
-void AFE4400::begin(int ss) {
+void AFE4400::begin(int ss,int nAFE_pwdn,int nAFE_rst) {
   chipSelectPin = ss;
   
   // set up control pins
   pinMode(nAFE_pwdn, OUTPUT);
-  pinMode(AFE_ADC_rdy, OUTPUT);
   pinMode(nAFE_rst, OUTPUT);
   pinMode(chipSelectPin, OUTPUT);
   
@@ -72,37 +67,29 @@ void AFE4400::begin(int ss) {
   // set up SPI
   SPI.begin();
   SPI.setDataMode(SPI_MODE0);	//CPHA = CPOL = 0    MODE = 0
-  delay(1000);
-    
   sw_reset();
-  
-  if (debugSerial) {Serial.println("Soft Reset\n");}
- }
- 
- void AFE4400::enableDebugSerial() {
-   debugSerial = 1;
- }
- 
- void AFE4400::disableDebugSerial() {
-   debugSerial = 0;
- }
 
- void AFE4400::setLEDCurrent(uint32_t led1_current, uint32_t led2_current) {
-	// read the reg
+ }
+ 
+
+ void AFE4400::setLEDCurrent(uint8_t led1_current, uint8_t led2_current) {
+	
 	uint32_t current_val = SPIReadReg(LEDCNTRL);
-	
-	// set led 1 value
-	led1_current = led1_current & 0xFF;
-	current_val = current_val & ~(0xFF << 8);
-	current_val = current_val | (led1_current << 8);
-	
-	// set led 2 value
-	led2_current = led2_current & 0xFF;
-	current_val = current_val & ~(0xFF);
-	current_val = current_val | (led2_current);
 
-	// write reg
+	current_val = (current_val>>16)<<16;
+
+  current_val = current_val | (led1_current << 8);
+  current_val = current_val | led2_current;
+	
 	SPIWriteReg(LEDCNTRL, current_val);
+ }
+uint32_t AFE4400::diag() {
+  
+  SPIWriteBit(CONTROL0, 2, true);
+  delay(20);
+  
+  return SPIReadReg(DIAG);
+
  }
  
  void AFE4400::setDefaultTiming() {
@@ -147,20 +134,33 @@ void AFE4400::begin(int ss) {
 //  be sure to set LED current before calling
 //  be sure to set timing parameters before calling (e.g. with setDefaultTiming)
 // 
-void AFE4400::beginMeasure() {
+void AFE4400::beginMeasure(bool Push_Pull) {
   // setup the LED driver (bit 11 of CONTROL2)
-  SPIWriteBit(CONTROL2, 11, false); // set it for H-Bridge mode
+
+  SPIWriteBit(CONTROL2, 11, Push_Pull); // set it for H-Bridge mode
 
   // turn on LED current (bit 17 of LEDCNTRL)
   SPIWriteBit(LEDCNTRL, 17, true);
 
+  // tri-state
+  //SPIWriteBit(CONTROL2, 10, true);  //not sure why it cause reading error
+
   // enable the timer module (bit D8 of CONTROL1)
   SPIWriteBit(CONTROL1, 8, true);
-  
-  if (debugSerial) {Serial.print("Now beginning pulse and oximeter readings");}
-  
-  // TODO: setup a timer or an interrupt to do SPI periodically
-  
+}
+
+void AFE4400::setGain(int ambdac,bool stage2,byte stage2_gain,byte Cf,byte Rf) {
+  uint32_t data = 0;
+  data  =  ambdac<<16;
+  if (stage2){
+   bitWrite(data,14,true);
+   data |=stage2_gain<<8;
+
+  }
+  data |=Cf<<3;
+  data |=Rf;
+
+  SPIWriteReg(TIA_AMB_GAIN,data);
 }
 
 int AFE4400::readPulseData(){
@@ -176,21 +176,10 @@ int AFE4400::readOxData(){
 void AFE4400::SPIWriteBit(byte regAddress, uint8_t bit, bool bit_high) {
 	// read the reg
 	uint32_t current_val = SPIReadReg(regAddress);
+	bitWrite(current_val,bit,bit_high);
 	
-	// check to see if we need to change the bit
-	if (bit_high & !(current_val & 1 << bit)) {
-		// set bit correct in reg
-		current_val = current_val | (bit_high << bit);
-		
-		// write reg
-		SPIWriteReg(regAddress, current_val);
-	} else if (!bit_high & (current_val & 1 << bit)) {
-		// set bit correct in reg
-		current_val = current_val & ~(bit_high << bit);
-		
-		// write reg
-		SPIWriteReg(regAddress, current_val);
-	}
+	SPIWriteReg(regAddress, current_val);
+
 	
 }
 
@@ -209,13 +198,17 @@ uint32_t AFE4400::SPIReadReg(byte regAddress){
   SPI.transfer(regAddress);
   // get first byte
   temp_byte = SPI.transfer(0x00);
-  reg_value = temp_byte << 16;
+  reg_value |= temp_byte << 16;
+
   // get second byte
   temp_byte = SPI.transfer(0x00);
-  reg_value = temp_byte << 8;
+  reg_value |= temp_byte << 8;
+
   // get last byte
   temp_byte = SPI.transfer(0x00);
-  
+  reg_value |= temp_byte;
+
+   reg_value = (reg_value<<8)>>8;
   digitalWrite(chipSelectPin, HIGH);
   
   // disable reading from registers
@@ -226,12 +219,12 @@ uint32_t AFE4400::SPIReadReg(byte regAddress){
 
 void AFE4400::SPIEnableRead() {
 	SPIWriteReg(CONTROL0, 1);
-	delay(1);
+	//delay(1);
 }
 
 void AFE4400::SPIDisableRead() {
 	SPIWriteReg(CONTROL0, 0);
-	delay(1);
+//	delay(1);
 }
 
 void AFE4400::SPIWriteReg(byte regAddress, uint32_t regValue){
@@ -241,18 +234,18 @@ void AFE4400::SPIWriteReg(byte regAddress, uint32_t regValue){
   
   SPI.transfer(regAddress);  // write instruction
   temp_byte = regValue >> 16;
-  SPI.transfer(regValue);
+  SPI.transfer(temp_byte);
   temp_byte = regValue >> 8;
-  SPI.transfer(regValue);
+  SPI.transfer(temp_byte);
   temp_byte = regValue;
-  SPI.transfer(regValue);
+  SPI.transfer(temp_byte);
   
   digitalWrite(chipSelectPin, HIGH);
 }
 
 void AFE4400::writeTimingData(byte regAddress, uint16_t timing_value) {
 	if (regAddress < LED2STC || regAddress > PRPCOUNT) {
-		if (debugSerial) {Serial.print("Error: timing address out of range"); }
+		if (debugSerial) {Serial.println("Error: timing address out of range"); }
 		return;
 	}
 	uint32_t reg_val = timing_value;
