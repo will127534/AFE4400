@@ -87,7 +87,6 @@ uint32_t AFE4400::diag() {
   
   SPIWriteBit(CONTROL0, 2, true);
   delay(20);
-  
   return SPIReadReg(DIAG);
 
  }
@@ -149,15 +148,17 @@ void AFE4400::beginMeasure(bool Push_Pull) {
   SPIWriteBit(CONTROL1, 8, true);
 }
 
-void AFE4400::setGain(int ambdac,bool stage2,byte stage2_gain,byte Cf,byte Rf) {
+void AFE4400::setGain(uint32_t ambdac,bool stage2,uint16_t stage2_gain,byte Cf,byte Rf) {
   uint32_t data = 0;
-  data  =  ambdac<<16;
+  data  |=  ambdac<<16;
+  //Serial.println(data,BIN);
   if (stage2){
    bitWrite(data,14,true);
    data |=stage2_gain<<8;
-
   }
+ 
   data |=Cf<<3;
+
   data |=Rf;
 
   SPIWriteReg(TIA_AMB_GAIN,data);
@@ -185,7 +186,7 @@ void AFE4400::SPIWriteBit(byte regAddress, uint8_t bit, bool bit_high) {
 
 
 uint32_t AFE4400::SPIReadReg(byte regAddress){
-  byte temp_byte = 0;
+  uint32_t temp_byte = 0;
   uint32_t reg_value = 0;
   
   

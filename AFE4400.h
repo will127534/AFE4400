@@ -101,7 +101,7 @@ public:
 	int AFE_ADC_rdy;
 	int nAFE_rst;
 	bool debugSerial;
-
+    
 	int pulse;
 	int oximetry;
 
@@ -131,7 +131,7 @@ public:
 	void SPIWriteReg(byte regAddress, uint32_t regValue);
 	
 	void writeTimingData(byte regAddress, uint16_t timing_value);
-    void setGain(int ambdac,bool stage2,byte stage2_gain,byte Cf,byte Rf) ;
+    void setGain(uint32_t ambdac,bool stage2,uint16_t stage2_gain,byte Cf,byte Rf) ;
     uint32_t diag();
 
 	void SPIEnableRead();
@@ -141,3 +141,5 @@ private:
 };
 
 #endif
+
+
